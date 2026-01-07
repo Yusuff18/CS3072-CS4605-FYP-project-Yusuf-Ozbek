@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ConsentX</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="wrap">
+
+      <!-- Freeze overlay -->
+<div id="disabledOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="overlayTitle">
+  <div class="overlay-content">
+    <div id="overlayTitle" class="overlay-title">ConsentX is paused</div>
+    <div class="overlay-sub">Toggle to resume automation</div>
+
+    <!-- NEW: re-enable button -->
+    <div class="overlay-actions">
+      <button id="overlayEnable" class="overlay-btn" aria-label="Turn ConsentX back on">Turn back on</button>
+    </div>
+  </div>
+</div>
+
+      <header class="header">
+        <div class="brand">
+          <img src="images/consentxlogo.png" alt="ConsentX logo" class="logo" />
+          <span class="brand-name">ConsentX</span>
+        </div>
+
+        <!-- Open Insights drawer button -->
+        <button id="insightsOpen" class="pill-btn">More insights →</button>
+
+        <label class="switch">
+          <input id="enabled" type="checkbox" />
+          <span class="slider"></span>
+        </label>
+      </header>
+
+      <!-- Automation -->
+      <section class="block accent-ring">
+        <div class="block-head row">
+          <span>Automation </span>
+          <div class="muted little">Smarter cookies</div>
+        </div>
+
+        <div class="row auto-row">
+          <label class="row gap8">
+            <input id="autoApply" type="checkbox" class="toggle-chk" />
+            <span class="label-strong">Enable auto-apply</span>
+          </label>
+
+          <label class="row gap8">
+            <span class="label-strong">Mode</span>
+            <select id="policyMode" class="pretty-select">
+              <option value="strict">Strict</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="allow">Allow</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="modeHint" class="muted little hint-line"></div>
+        <div class="hr"></div>
+
+        <div class="row auto-row">
+          <label class="row gap8">
+            <input id="siteLearning" type="checkbox" class="toggle-chk" />
+            <span class="label-strong">Learning enabled</span>
+          </label>
+
+          <label class="row gap8">
+            <span class="label-strong">Mode</span>
+            <select id="siteMode" class="pretty-select">
+              <option value="">(Global)</option>
+              <option value="strict">Strict</option>
+              <option value="balanced">Balanced</option>
+              <option value="allow">Allow</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="siteName" class="muted little margin-top4"></div>
+      </section>
+
+      <!-- Stats tiles -->
+      <section class="tiles">
+        <div class="tile accent-ring">
+          <div class="tile-num" id="encountered">0</div>
+          <div class="tile-label">Cookies encountered</div>
+        </div>
+        <div class="tile accent-ring">
+          <div class="tile-num" id="autofilled">0</div>
+          <div class="tile-label">Auto-filled</div>
+        </div>
+        <div class="tile accent-ring">
+          <div class="tile-num" id="sites">0</div>
+          <div class="tile-label">Sites with banners</div>
+        </div>
+      </section>
+
+      <!-- Recent Sites -->
+      <section class="block accent-ring">
+        <div class="block-head row">
+          <span>Websites that asked for cookies</span>
+          <input id="filter" type="search" class="search" placeholder="Filter sites…" />
+        </div>
+        <div id="sitesList" class="sites-list"></div>
+        <div id="sitesToggle" class="toggle-more muted little pointer margin-top6">Show more…</div>
+      </section>
+
+      <!-- Activity -->
+      <section class="block accent-ring">
+        <div class="block-head">Activity</div>
+        <ul class="chips" id="kinds"></ul>
+      </section>
+
+      <!-- CMPs -->
+      <section class="block accent-ring">
+        <div class="block-head">Top consent providers</div>
+        <ul class="chips" id="cmps"></ul>
+      </section>
+
+      <footer class="footer">
+        <button id="clear" class="linklike">Reset stats</button>
+        <span class="muted">All data stays on this device</span>
+      </footer>
+
+    </div>
+
+    <!-- Dim overlay -->
+    <div id="insightsDim" class="insights-dim hidden"></div>
+
+    <!-- Slide-out drawer -->
+    <aside id="insightsDrawer" class="insights-drawer">
+      <div class="insights-head">
+        <button id="insightsClose" class="back-btn">← Back</button>
+        <div class="insights-title">Insights</div>
+      </div>
+      <div id="insightsBody" class="insights-body"></div>
+    </aside>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
