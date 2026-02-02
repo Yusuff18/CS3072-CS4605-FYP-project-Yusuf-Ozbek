@@ -147,9 +147,19 @@ input:checked + .slider:before{ transform:translateX(22px); }
 
 /* ---------- Stats tiles ---------- */
 .tiles{
-  display:grid; grid-template-columns:repeat(3,1fr);
-  gap:10px; margin-bottom:12px;
+  display:grid;
+  grid-template-columns:repeat(3, 1fr);
+  gap:10px;
+  margin-bottom:12px;
 }
+
+/* When more tiles exist, allow a second row nicely */
+@media (min-width: 420px){
+  .tiles{
+    grid-template-columns:repeat(5, 1fr);
+  }
+}
+
 .tile{
   border:1px solid var(--border);
   border-radius:16px;

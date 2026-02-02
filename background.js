@@ -1,19 +1,17 @@
-// MV3 service worker: ledger + settings + learned signatures + policy engine + decisions
-const LEDGER_KEY   = 'ledger_v1';
 const SETTINGS_KEY = 'settings_v1';
 const LEARNED_KEY  = 'learned_signatures_v1';
 
 const defaultSettings = {
   enabled: true,
-  policyMode: 'balanced',          // 'strict' | 'balanced' | 'allow'
-  autoApply: true,                 // master switch for automation
-  perSite: {}                      // { [origin]: { mode?: 'strict'|'balanced'|'allow', learning?: boolean } }
+  policyMode: 'balanced',         
+  autoApply: true,                 
+  perSite: {}                     
 };
 
 console.log('[SW] background.js loaded!');
 chrome.runtime.onInstalled.addListener(() => console.log('[SW] onInstalled'));
 
-// ---------- storage helpers ----------
+
 async function getLedger() {
   const obj = await chrome.storage.local.get(LEDGER_KEY);
   return Array.isArray(obj[LEDGER_KEY]) ? obj[LEDGER_KEY] : [];
@@ -42,14 +40,14 @@ async function setLearnedMap(map) {
   await chrome.storage.local.set({ [LEARNED_KEY]: map });
 }
 
-// ---------- ledger ----------
+
 async function logEvent(site, action, details = {}, actor = 'user') {
   const entry = {
     id: cryptoRandomId(),
     site,
     ts: Date.now(),
-    actor,   // 'user' | 'auto'
-    action,  // 'page.load' | 'cmp.banner.detected' | 'cmp.button.click' | 'policy.auto.apply' | 'policy.skip' | 'policy.learned'
+    actor,   
+    action,  
     details
   };
   const list = await getLedger();
@@ -96,18 +94,7 @@ function setBadgeSafe(tabId, text, color = '#4f46e5', clearAfterMs = 0) {
   ).catch(() => {});
 }
 
-// ---------- learned signatures ----------
-/**
- * record: {
- *   signatureHash: string,
- *   site: origin,
- *   cmp: string|null,
- *   decidedKind: 'accept_like'|'reject_like'|'settings_like',
- *   decidedBy: 'user'|'auto',
- *   labelExample?: string,
- *   selectorExample?: string
- * }
- */
+
 async function learnSignature(record) {
   if (!record?.signatureHash || !record.decidedKind) return null;
   const map = await getLearnedMap();
@@ -147,7 +134,7 @@ async function learnSignature(record) {
   return merged;
 }
 
-// ---------- policy engine ----------
+
 function chooseDefaultByMode(mode, availableKinds = []) {
   const has = (k) => availableKinds.includes(k);
   switch (mode) {
@@ -182,6 +169,12 @@ async function decidePolicy({ site, cmp, signatureHash, availableKinds }) {
   const learned = learnedMap[signatureHash];
   const siteCfg = settings.perSite?.[site] || {};
   const mode = siteCfg.mode || settings.policyMode;
+
+    // Per-site kill switch
+  if (siteCfg.disabled === true) {
+    return { apply: false, decidedKind: null, reason: 'site disabled' };
+  }
+
 
   // If learned exists and matches safely → apply learned
   if (learned) {
@@ -220,25 +213,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'get_ledger') {
-    (async () => {
-      await tryRestoreLedgerIfEmpty();
-      sendResponse({ ok: true, list: await getLedger() });
-    })();
-    return true;
-  }
+  (async () => {
+    sendResponse({ ok: true, list: await getLedger() });
+  })();
+  return true;
+}
 
   if (msg.type === 'clear_ledger') {
-    (async () => {
-      const list = await getLedger();
-      await chrome.storage.local.set({
-        ledger_backup_v1: list,
-        [LEDGER_KEY]: [],
-        last_clear_ledger: { ts: Date.now(), reason: msg.reason || 'manual' }
-      });
-      sendResponse({ ok: true });
-    })();
-    return true;
-  }
+  (async () => {
+    // Hard-delete: remove ledger + backup so nothing can be restored
+    await chrome.storage.local.set({
+      [LEDGER_KEY]: [],
+      last_clear_ledger: { ts: Date.now(), reason: msg.reason || 'manual' }
+    });
+
+    // Remove any backups explicitly
+await chrome.storage.local.remove(['ledger_backup_v1', LEARNED_KEY]);
+    sendResponse({ ok: true });
+  })();
+  return true;
+}
 
   if (msg.type === 'get_settings') {
     (async () => {

@@ -76,6 +76,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!settings.enabled) showOverlay();
     else hideOverlay();
 
+    const marketingCleared = ledger.filter(e => e.action === 'marketing.optin.cleared').length;
+    const permPrompts = ledger.filter(e => e.action === 'permission.requested').length;
+
+    if (els.marketingCleared) els.marketingCleared.textContent = String(marketingCleared);
+    if (els.permPrompts) els.permPrompts.textContent = String(permPrompts);
+
+
     draw(ledger);
   }
 
@@ -104,16 +111,29 @@ document.addEventListener('DOMContentLoaded', () => {
     els.sites.textContent       = String(Object.keys(siteCounts).length);
 
     // Friendly activity chips
-    const friendly = { accept_like:'Accepted', reject_like:'Rejected', settings_like:'Adjusted settings' };
-    const kindCounts = countBy(
-      ledger.filter(e => e.action === 'cmp.button.click' && e.details?.kind),
-      e => friendly[e.details.kind] || 'Other'
-    );
-    renderChips(els.kinds, [
-      ['Accepted', kindCounts['Accepted']||0],
-      ['Rejected', kindCounts['Rejected']||0],
-      ['Adjusted settings', kindCounts['Adjusted settings']||0]
-    ]);
+    // Friendly activity chips (includes marketing + permissions)
+const friendly = {
+  accept_like:   'Accepted',
+  reject_like:   'Rejected',
+  settings_like: 'Adjusted settings'
+};
+
+const accepted = ledger.filter(e => e.action === 'cmp.button.click' && e.details?.kind === 'accept_like').length;
+const rejected = ledger.filter(e => e.action === 'cmp.button.click' && e.details?.kind === 'reject_like').length;
+const adjusted = ledger.filter(e => e.action === 'cmp.button.click' && e.details?.kind === 'settings_like').length;
+
+const marketingDetected = ledger.filter(e => e.action === 'marketing.optin.detected').length;
+const marketingCleared  = ledger.filter(e => e.action === 'marketing.optin.cleared').length;
+const permissionReqs    = ledger.filter(e => e.action === 'permission.requested').length;
+
+renderChips(els.kinds, [
+  ['Accepted', accepted],
+  ['Rejected', rejected],
+  ['Adjusted settings', adjusted],
+  ['Marketing found', marketingDetected],
+  ['Marketing cleared', marketingCleared],
+  ['Permission prompts', permissionReqs]
+]);
 
     // Top CMPs
     const cmpCounts = countBy(ledger.filter(e => e.details?.cmp), e => niceCMP(e.details.cmp));
@@ -193,6 +213,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderInsights(ledger){
     if (!els.insightsBody) return;
 
+    const marketingDetected = ledger.filter(e => e.action === 'marketing.optin.detected');
+    const marketingCleared  = ledger.filter(e => e.action === 'marketing.optin.cleared');
+    const perms             = ledger.filter(e => e.action === 'permission.requested');
+
     const clicks = ledger.filter(e => e.action === 'cmp.button.click');
     const auto   = clicks.filter(e => e.actor === 'auto');
     const detects= ledger.filter(e => e.action === 'cmp.banner.detected');
@@ -231,6 +255,13 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="kv"><span class="k">Total interactions</span><span>${clicks.length}</span></div>
         <div class="kv"><span class="k">Auto-filled</span><span>${auto.length}</span></div>
         <div class="kv"><span class="k">Banners detected</span><span>${detects.length}</span></div>
+      </div>
+
+      <div class="ins-card">
+      <h4>Other prompts</h4>
+      <div class="kv"><span class="k">Marketing opt-ins found</span><span>${marketingDetected.length}</span></div>
+      <div class="kv"><span class="k">Marketing opt-ins cleared</span><span>${marketingCleared.length}</span></div>
+      <div class="kv"><span class="k">Permission prompts detected</span><span>${perms.length}</span></div>
       </div>
 
       <div class="ins-card">
