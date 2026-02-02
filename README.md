@@ -1,1 +1,7 @@
-# CS3072-CS4605-FYP-project-Yusuf-Ozbek
+ConsentX is a Manifest V3 browser extension developed as part of a BSc Computer Science final-year dissertation. The extension explores a local-first approach to cookie consent automation, aiming to reduce consent fatigue while preserving user control and transparency. ConsentX detects cookie consent banners, applies user-defined preferences, and records decisions locally within the user’s browser profile. No data is transmitted, synchronised, or stored externally.
+
+The extension is designed around a service-worker-centred architecture in line with Manifest V3 requirements. Consent detection occurs at the page level, while all decision-making and storage are handled centrally by the background service worker. This separation ensures consistent behaviour across websites and avoids executing policy logic directly within web page contexts. All consent records are stored using chrome.storage.local, meaning each installation starts with a clean state and no development or testing data is shared when the project is distributed.
+
+INSTALLATION:
+
+To install the extension, download or clone this repository to your local machine. Open Google Chrome and navigate to chrome://extensions. Enable Developer mode using the toggle in the top-right corner, then click “Load unpacked” and select the folder that contains the manifest.json file. Once loaded, the extension will appear in the browser toolbar and can be used immediately.

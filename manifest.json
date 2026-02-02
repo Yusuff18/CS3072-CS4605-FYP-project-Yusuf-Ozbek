@@ -7,15 +7,12 @@
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "action": { "default_title": "ConsentX", "default_popup": "popup.html" },
-   "icons": {
-    "16": "/images/consentxlogo.png",
-    "48": "/images/consentxlogo.png",
-    "128": "/images/consentxlogo.png"
+  "icons": {
+    "16": "images/consentxlogo.png",
+    "48": "images/consentxlogo.png",
+    "128": "images/consentxlogo.png"
   },
-  "options_page": "options.html",
   "content_scripts": [
     { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }
-  ],
-  "options_ui": { "page": "options.html", "open_in_tab": false }
-  
+  ]
 }
