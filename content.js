@@ -1,6 +1,4 @@
-// Content script: robust detect + signature hashing + learned storage + safe auto-apply (policy engine)
-// Automation respects: learned signatures, per-site learning, drift detection, single visible target
-
+// Boot: respect global enabled toggle
 chrome.storage.local.get('settings_v1', (obj) => {
   const enabled = obj?.settings_v1?.enabled ?? true;
   if (!enabled) {
@@ -13,12 +11,14 @@ chrome.storage.local.get('settings_v1', (obj) => {
 function initConsentX() {
   (function init() {
     const inIframe = window.top !== window;
-    console.log("[ConsentX] content loaded", { href: location.href, inIframe });
+    console.log('[ConsentX] content loaded', { href: location.href, inIframe });
 
-    // Page/frame load
-    sendLog("page.load", { title: document.title, path: location.pathname, href: location.href });
+    // Basic page signal
+    sendLog('page.load', { title: document.title, path: location.pathname, href: location.href });
+
     installPermissionMonitors();
-    // --- User click handler (logs + learns) ---
+
+    // User interactions: log + learn from explicit clicks
     const handler = (e) => {
       const el = findClickable(e.target);
       if (!el) return;
@@ -34,7 +34,7 @@ function initConsentX() {
       computeBannerSignature(bannerRoot, cmp, available).then((sig) => {
         const selector = shortCssPath(el);
 
-        sendLog("cmp.button.click", {
+        sendLog('cmp.button.click', {
           label,
           kind,
           selector,
@@ -46,7 +46,6 @@ function initConsentX() {
           availableKinds: available
         }, 'user');
 
-        // Learn from user choice
         chrome.runtime.sendMessage({
           type: 'learn_signature',
           record: {
@@ -62,14 +61,14 @@ function initConsentX() {
       });
     };
 
-    window.addEventListener("click", handler, { capture: true });
-    window.addEventListener("pointerup", handler, { capture: true });
-    window.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " ") return;
+    window.addEventListener('click', handler, { capture: true });
+    window.addEventListener('pointerup', handler, { capture: true });
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
       handler(e);
     }, { capture: true });
 
-    // --- MutationObserver for async banners ---
+    // Banner detection: catch async CMP injections
     const mo = new MutationObserver((muts) => {
       for (const m of muts) {
         for (const node of m.addedNodes) {
@@ -81,19 +80,24 @@ function initConsentX() {
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 
-    // --- Initial + delayed scans ---
+    // Initial sweeps
     scheduleScans([0, 300, 1000, 2500, 4500, 7000]);
     scheduleMarketingScans([1200, 3000, 6000]);
   })();
 }
 
-/* ---------------- Banner scanning & auto-apply ---------------- */
+// Banner scanning
 
 const _seenSignatures = new Set();
 const _seenNodes = new WeakSet();
 
-function scheduleScans(delays) { for (const d of delays) setTimeout(() => safeScan(), d); }
-function safeScan() { try { scanEntireDocument(); } catch {} }
+function scheduleScans(delays) {
+  for (const d of delays) setTimeout(() => safeScan(), d);
+}
+
+function safeScan() {
+  try { scanEntireDocument(); } catch {}
+}
 
 function scanEntireDocument() {
   const selectors = [
@@ -114,21 +118,27 @@ function scanEntireDocument() {
 
   const containerGuess = Array.from(document.body.querySelectorAll('div,section,aside,dialog'))
     .slice(0, 400);
+
   for (const node of containerGuess) {
     if (_seenNodes.has(node)) continue;
     if (looksLikeBanner(node)) candidates.add(node);
   }
+
   for (const el of candidates) scanNodeForBanner(el);
 }
 
-// Choose a single visible, interactable target of decided kind
+// Safety: require exactly one visible in-viewport target
 function chooseTargetButton(root, kind) {
-  const btns = Array.from(root.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]'));
-  const candidates = btns.filter((b) => classify(getLabel(b), b) === kind)
+  const btns = Array.from(
+    root.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]')
+  );
+
+  const candidates = btns
+    .filter((b) => classify(getLabel(b), b) === kind)
     .filter(isVisible)
     .filter(isInViewport);
 
-  if (candidates.length !== 1) return null; // require exactly one to be safe
+  if (candidates.length !== 1) return null;
   return candidates[0];
 }
 
@@ -136,34 +146,61 @@ function isVisible(el) {
   const style = window.getComputedStyle(el);
   return style && style.visibility !== 'hidden' && style.display !== 'none' && el.offsetParent !== null;
 }
+
 function isInViewport(el) {
   const r = el.getBoundingClientRect();
-  return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= (window.innerHeight || document.documentElement.clientHeight);
+  return (
+    r.width > 0 &&
+    r.height > 0 &&
+    r.top >= 0 &&
+    r.left >= 0 &&
+    r.bottom <= (window.innerHeight || document.documentElement.clientHeight)
+  );
 }
 
-/* ---------------- Signature helpers ---------------- */
-function norm(str) { return (str || "").trim().replace(/\s+/g, " ").toLowerCase(); }
+// Signature hashing
+
+function norm(str) {
+  return (str || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 function collectButtonLabels(root) {
   const labels = [];
   const btns = root.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]');
-  for (const b of btns) { const t = getLabel(b); if (t) labels.push(norm(t)); }
+  for (const b of btns) {
+    const t = getLabel(b);
+    if (t) labels.push(norm(t));
+  }
   return labels.sort();
 }
-function extractBannerText(root) { const txt = norm(root.innerText || ""); return txt.slice(0, 2000); }
+
+function extractBannerText(root) {
+  const txt = norm(root.innerText || '');
+  return txt.slice(0, 2000);
+}
+
 async function sha256(str) {
   const buf = new TextEncoder().encode(str);
-  const hash = await crypto.subtle.digest("SHA-256", buf);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
   const arr = Array.from(new Uint8Array(hash));
-  return arr.map(b => b.toString(16).padStart(2, "0")).join("");
+  return arr.map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
 async function computeBannerSignature(root, cmp, availableKinds) {
   const text = extractBannerText(root);
   const btns = collectButtonLabels(root);
-  const cmpNorm = (cmp || "").toLowerCase();
-  const raw = JSON.stringify({ cmp: cmpNorm, text, btns, kinds: (availableKinds || []).slice().sort() });
+  const cmpNorm = (cmp || '').toLowerCase();
+  const raw = JSON.stringify({
+    cmp: cmpNorm,
+    text,
+    btns,
+    kinds: (availableKinds || []).slice().sort()
+  });
+
   const full = await sha256(raw);
   return full.slice(0, 12);
 }
+
 function findBannerRoot(el) {
   let n = el;
   while (n && n !== document.body) {
@@ -173,59 +210,88 @@ function findBannerRoot(el) {
   return null;
 }
 
-/* ---------------- Utilities ---------------- */
+// Utilities
+
 function sendLog(action, details, actor) {
   try {
-    chrome.runtime.sendMessage({ type: "log_event", site: location.origin, action, details, actor });
+    chrome.runtime.sendMessage({ type: 'log_event', site: location.origin, action, details, actor });
   } catch {}
 }
 
 function classify(label, el) {
-  const L = (label || "").toLowerCase();
-  const id = (el?.id || "").toLowerCase();
-  const cls = (el?.className || "").toLowerCase();
+  const L = (label || '').toLowerCase();
+  const id = (el?.id || '').toLowerCase();
+  const cls = (el?.className || '').toLowerCase();
   const has = (s) => new RegExp(s, 'i').test(L) || new RegExp(s, 'i').test(id) || new RegExp(s, 'i').test(cls);
 
-  if (has('\\b(accept|agree|allow|consent|yes|okay|ok)\\b')) return "accept_like";
-  if (has('\\b(reject|decline|deny|refuse|disagree|no)\\b') || has('\\b(necessary|essential only)\\b')) return "reject_like";
-  if (has('\\b(settings|preferences|manage|customize|options|choices)\\b')) return "settings_like";
+  if (has('\\b(accept|agree|allow|consent|yes|okay|ok)\\b')) return 'accept_like';
+  if (has('\\b(reject|decline|deny|refuse|disagree|no)\\b') || has('\\b(necessary|essential only)\\b')) return 'reject_like';
+  if (has('\\b(settings|preferences|manage|customize|options|choices)\\b')) return 'settings_like';
   return null;
 }
 
 function findClickable(start) {
-  const match = (n) => n && n instanceof Element &&
+  const match = (n) =>
+    n &&
+    n instanceof Element &&
     n.matches('button,[role="button"],a,input[type="button"],input[type="submit"]');
-  const path = (start && typeof start.composedPath === "function" ? start.composedPath() : null) || window._lastPath || null;
+
+  const path =
+    (start && typeof start.composedPath === 'function' ? start.composedPath() : null) ||
+    window._lastPath ||
+    null;
+
   if (path) for (const n of path) if (match(n)) return n;
+
   return start?.closest?.('button,[role="button"],a,input[type="button"],input[type="submit"]') || null;
 }
-addEventListener("click", (e) => { window._lastPath = e.composedPath?.() || null; }, { capture: true });
+
+addEventListener('click', (e) => {
+  window._lastPath = e.composedPath?.() || null;
+}, { capture: true });
 
 function getLabel(el) {
   const text =
     (el.innerText && el.innerText.trim()) ||
     (el.value && String(el.value).trim()) ||
-    (el.getAttribute("aria-label") || "").trim() ||
-    (el.getAttribute("title") || "").trim();
-  return (text || "").replace(/\s+/g, " ");
+    (el.getAttribute('aria-label') || '').trim() ||
+    (el.getAttribute('title') || '').trim();
+  return (text || '').replace(/\s+/g, ' ');
 }
 
 function shortCssPath(el) {
   try {
     const parts = [];
     let n = el;
+
     while (n && parts.length < 5) {
       let piece = n.nodeName.toLowerCase();
-      if (n.id) { parts.unshift(`${piece}#${n.id}`); break; }
-      const cls = (n.className || "").toString().trim().split(/\s+/).filter(Boolean).slice(0, 2);
-      if (cls.length) piece += "." + cls.map((c) => CSS.escape(c)).join(".");
+
+      if (n.id) {
+        parts.unshift(`${piece}#${n.id}`);
+        break;
+      }
+
+      const cls = (n.className || '')
+        .toString()
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2);
+
+      if (cls.length) piece += '.' + cls.map((c) => CSS.escape(c)).join('.');
       parts.unshift(piece);
+
       n = n.parentElement || (n.getRootNode && n.getRootNode().host) || null;
     }
-    return parts.join(" > ");
-  } catch { return ""; }
+
+    return parts.join(' > ');
+  } catch {
+    return '';
+  }
 }
 
+// Heuristics: keep this conservative (false negatives > false positives)
 function looksLikeBanner(node) {
   const el = node instanceof HTMLElement ? node : null;
   if (!el) return false;
@@ -236,7 +302,7 @@ function looksLikeBanner(node) {
     if (/\bcookie|gdpr|consent|privacy|your privacy|privacy choices|do not sell|manage cookies/.test(t)) return true;
   }
 
-  const txt = ((el.innerText || '').toLowerCase());
+  const txt = (el.innerText || '').toLowerCase();
   if (/\bcookie|cookies|gdpr|consent|privacy|preferences|manage cookies|do not sell|privacy choices/.test(txt)) return true;
 
   const idc = ((el.id || '') + ' ' + (el.className || '')).toLowerCase();
@@ -249,7 +315,8 @@ function looksLikeBanner(node) {
 
 function detectCMP(el) {
   const hay = [
-    el?.id, el?.className,
+    el?.id,
+    el?.className,
     document.documentElement?.className,
     document.documentElement?.id
   ].join(' ').toLowerCase();
@@ -283,7 +350,6 @@ function findAvailableKinds(root) {
 function scanNodeForBanner(node) {
   if (!(node instanceof HTMLElement)) return;
   if (_seenNodes.has(node)) return;
-
   if (!looksLikeBanner(node)) return;
 
   const cmp = detectCMP(node) || null;
@@ -291,20 +357,21 @@ function scanNodeForBanner(node) {
 
   computeBannerSignature(node, cmp, available).then((sig) => {
     if (_seenSignatures.has(sig)) return;
+
     _seenSignatures.add(sig);
     _seenNodes.add(node);
 
-    sendLog("cmp.banner.detected", {
+    sendLog('cmp.banner.detected', {
       tag: node.tagName.toLowerCase(),
-      classes: node.className || "",
+      classes: node.className || '',
       href: location.href,
       cmp,
       signatureHash: sig,
       availableKinds: available
     });
 
-    // === AUTO-APPLY DECISION ===
-    const bannerRoot = node; // capture for closures (undo/toast must reference this exact element)
+    // Auto-apply (delegated to service worker policy)
+    const bannerRoot = node;
 
     chrome.runtime.sendMessage({
       type: 'policy_check',
@@ -320,23 +387,22 @@ function scanNodeForBanner(node) {
 
       const target = chooseTargetButton(bannerRoot, decision.decidedKind);
       if (!target) {
-        sendLog(
-          'policy.skip',
-          { reason: 'no safe target', decidedKind: decision.decidedKind, signatureHash: sig, href: location.href },
-          'auto'
-        );
+        sendLog('policy.skip', {
+          reason: 'no safe target',
+          decidedKind: decision.decidedKind,
+          signatureHash: sig,
+          href: location.href
+        }, 'auto');
         return;
       }
 
       try {
-        // Perform the auto action
         target.click();
 
         const label = getLabel(target);
         const selector = shortCssPath(target);
 
-        // Record the click (actor = auto)
-        sendLog("cmp.button.click", {
+        sendLog('cmp.button.click', {
           label,
           kind: decision.decidedKind,
           selector,
@@ -346,7 +412,6 @@ function scanNodeForBanner(node) {
           autoReason: decision.reason
         }, 'auto');
 
-        // Learn (actor = auto) so future drift checks have context
         chrome.runtime.sendMessage({
           type: 'learn_signature',
           record: {
@@ -360,12 +425,11 @@ function scanNodeForBanner(node) {
           }
         });
 
-        // ---------- On-page explanation + Undo ----------
-        // These guards prevent runtime errors if you haven't pasted helper functions yet.
+        // Optional: toast + undo hooks (only if helper functions exist)
         if (typeof showConsentXToast === 'function' && typeof niceKind === 'function') {
           const decisionText = `${niceKind(decision.decidedKind)} applied`;
-          const reasonText   = decision.reason || 'policy decision';
-          const cmpText      = (cmp ? `CMP: ${cmp}` : 'CMP: unknown');
+          const reasonText = decision.reason || 'policy decision';
+          const cmpText = (cmp ? `CMP: ${cmp}` : 'CMP: unknown');
 
           showConsentXToast({
             title: `ConsentX: ${decisionText}`,
@@ -378,11 +442,11 @@ function scanNodeForBanner(node) {
                 : false;
 
               if (!ok) {
-                sendLog(
-                  'policy.undo.unavailable',
-                  { reason: 'no unique settings button', href: location.href, signatureHash: sig },
-                  'user'
-                );
+                sendLog('policy.undo.unavailable', {
+                  reason: 'no unique settings button',
+                  href: location.href,
+                  signatureHash: sig
+                }, 'user');
 
                 try {
                   bannerRoot.style.outline = '3px solid rgba(59,130,246,.6)';
@@ -399,24 +463,21 @@ function scanNodeForBanner(node) {
             }
           });
         }
-        // ---------- End toast ----------
-
       } catch (e) {
-        sendLog(
-          'policy.skip',
-          {
-            reason: 'click threw',
-            error: String(e),
-            decidedKind: decision.decidedKind,
-            signatureHash: sig,
-            href: location.href
-          },
-          'auto'
-        );
+        sendLog('policy.skip', {
+          reason: 'click threw',
+          error: String(e),
+          decidedKind: decision.decidedKind,
+          signatureHash: sig,
+          href: location.href
+        }, 'auto');
       }
     });
   }).catch(() => {});
 }
+
+// Settings bridge (content -> SW)
+
 function getSettings() {
   return new Promise((res) => {
     chrome.runtime.sendMessage({ type: 'get_settings' }, (r) => res(r?.settings || {}));
@@ -428,7 +489,8 @@ function setSettings(patch) {
     chrome.runtime.sendMessage({ type: 'set_settings', patch }, (r) => res(r?.settings || {}));
   });
 }
-/* ---------------- On-page toast + Undo + per-site disable ---------------- */
+
+// Toast + undo + per-site disable
 
 function niceKind(kind) {
   if (kind === 'accept_like') return 'Accept';
@@ -437,12 +499,10 @@ function niceKind(kind) {
   return 'Action';
 }
 
-// Best-effort "Undo": open the settings/preferences link if it exists uniquely.
 async function attemptUndoViaSettings(bannerRoot) {
   try {
     if (!bannerRoot || !(bannerRoot instanceof HTMLElement)) return false;
 
-    // Try to find exactly one visible "settings-like" control within the same banner
     const btns = Array.from(
       bannerRoot.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]')
     );
@@ -460,7 +520,6 @@ async function attemptUndoViaSettings(bannerRoot) {
   }
 }
 
-// Disable automation on this site (does not disable the whole extension)
 async function disableAutomationOnThisSite() {
   const origin = location.origin;
   const patch = { perSite: { [origin]: { disabled: true } } };
@@ -527,7 +586,6 @@ function ensureToastHost() {
 function showConsentXToast({ title, sub, meta, onUndo, onDisableSite, primaryText, onPrimary }) {
   ensureToastHost();
 
-  // Remove any existing toast (keeps it simple + avoids stacking)
   const host = document.getElementById('consentx-toast-host');
   host.innerHTML = '';
 
@@ -549,7 +607,6 @@ function showConsentXToast({ title, sub, meta, onUndo, onDisableSite, primaryTex
   const actions = document.createElement('div');
   actions.className = 'cx-actions';
 
-  // Optional primary (used later for marketing opt-ins)
   if (typeof onPrimary === 'function') {
     const btn = document.createElement('button');
     btn.className = 'cx-btn primary';
@@ -593,17 +650,19 @@ function showConsentXToast({ title, sub, meta, onUndo, onDisableSite, primaryTex
 
   host.appendChild(toast);
 
-  // Auto-dismiss after ~8 seconds
   setTimeout(() => {
     if (host.contains(toast)) host.innerHTML = '';
   }, 8000);
 }
-/* ---------------- Marketing opt-in detection (assistive) ---------------- */
+
+// Marketing opt-in assist
 
 let _marketingToastShown = false;
 
 function scheduleMarketingScans(delays) {
-  for (const d of delays) setTimeout(() => { try { scanMarketingOptIns(); } catch {} }, d);
+  for (const d of delays) setTimeout(() => {
+    try { scanMarketingOptIns(); } catch {}
+  }, d);
 }
 
 function scanMarketingOptIns() {
@@ -618,7 +677,6 @@ function scanMarketingOptIns() {
     examples: hits.slice(0, 3).map(h => h.text)
   }, 'auto');
 
-  // Only show the toast if at least one opt-in is already checked (common annoying case)
   const checked = hits.filter(h => h.checked);
   if (!checked.length) return;
 
@@ -652,6 +710,7 @@ function labelTextForInput(input) {
       const lab = document.querySelector(`label[for="${CSS.escape(id)}"]`);
       if (lab && lab.innerText) return lab.innerText.trim();
     }
+
     const parentLabel = input.closest('label');
     if (parentLabel && parentLabel.innerText) return parentLabel.innerText.trim();
 
@@ -680,24 +739,27 @@ function findMarketingOptIns() {
     });
   }
 
-  // checked first
   out.sort((a, b) => (b.checked - a.checked));
   return out;
 }
 
 function uncheckMarketingOptIns(list) {
   let changed = 0;
+
   for (const it of list) {
     const el = it.el;
     if (!el || !el.isConnected) continue;
+
     if (el.checked) {
-      el.click(); // click so sites/frameworks update state
+      el.click();
       changed++;
     }
   }
+
   return changed;
 }
-/* ---------------- Permission request detection ---------------- */
+
+// Permission request detection
 
 let _permToastShown = false;
 
@@ -726,6 +788,7 @@ function installPermissionMonitors() {
           return origGet(...args);
         };
       }
+
       if (origWatch) {
         geo.watchPosition = function (...args) {
           onPermissionRequested('location (watch)');
@@ -751,7 +814,6 @@ function installPermissionMonitors() {
 function onPermissionRequested(kind) {
   sendLog('permission.requested', { kind, href: location.href }, 'auto');
 
-  // Optional: show one toast per page so it doesn't become annoying
   if (_permToastShown) return;
   _permToastShown = true;
 

@@ -1,72 +1,96 @@
+// Core storage keys
+const LEDGER_KEY   = 'ledger_v1';
 const SETTINGS_KEY = 'settings_v1';
 const LEARNED_KEY  = 'learned_signatures_v1';
+const LEDGER_BACKUP_KEY = 'ledger_backup_v1';
 
+// Default extension behaviour
 const defaultSettings = {
   enabled: true,
-  policyMode: 'balanced',         
-  autoApply: true,                 
-  perSite: {}                     
+  policyMode: 'balanced',   // strict | balanced | allow
+  autoApply: true,
+  perSite: {}
 };
 
-console.log('[SW] background.js loaded!');
-chrome.runtime.onInstalled.addListener(() => console.log('[SW] onInstalled'));
+console.log('[SW] loaded');
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('[SW] installed');
+});
 
+// Storage
 
 async function getLedger() {
   const obj = await chrome.storage.local.get(LEDGER_KEY);
   return Array.isArray(obj[LEDGER_KEY]) ? obj[LEDGER_KEY] : [];
 }
+
 async function setLedger(list) {
   await chrome.storage.local.set({ [LEDGER_KEY]: list });
 }
+
 async function getSettings() {
   const obj = await chrome.storage.local.get(SETTINGS_KEY);
   const cur = obj[SETTINGS_KEY] ?? defaultSettings;
-  const withDefaults = { ...defaultSettings, ...cur, perSite: { ...(cur.perSite || {}) } };
-  if (JSON.stringify(withDefaults) !== JSON.stringify(cur)) {
-    await chrome.storage.local.set({ [SETTINGS_KEY]: withDefaults });
+
+  const merged = {
+    ...defaultSettings,
+    ...cur,
+    perSite: { ...(cur.perSite || {}) }
+  };
+
+  if (JSON.stringify(merged) !== JSON.stringify(cur)) {
+    await chrome.storage.local.set({ [SETTINGS_KEY]: merged });
   }
-  return withDefaults;
+
+  return merged;
 }
+
 async function setSettings(next) {
   await chrome.storage.local.set({ [SETTINGS_KEY]: next });
   return next;
 }
+
 async function getLearnedMap() {
   const obj = await chrome.storage.local.get(LEARNED_KEY);
   return obj[LEARNED_KEY] || {};
 }
+
 async function setLearnedMap(map) {
   await chrome.storage.local.set({ [LEARNED_KEY]: map });
 }
 
+// Ledger
 
 async function logEvent(site, action, details = {}, actor = 'user') {
   const entry = {
     id: cryptoRandomId(),
     site,
     ts: Date.now(),
-    actor,   
-    action,  
+    actor,
+    action,
     details
   };
+
   const list = await getLedger();
   list.push(entry);
-  const bounded = list.length > 5000 ? list.slice(-5000) : list;
-  await setLedger(bounded);
+
+  await setLedger(list.length > 5000 ? list.slice(-5000) : list);
   return entry;
 }
 
-async function tryRestoreLedgerIfEmpty(){
-  const now = await getLedger();
-  if (now.length) return false;
-  const obj = await chrome.storage.local.get(['ledger_backup_v1']);
-  const backup = obj.ledger_backup_v1 || [];
+async function tryRestoreLedgerIfEmpty() {
+  const current = await getLedger();
+  if (current.length) return false;
+
+  const obj = await chrome.storage.local.get([LEDGER_BACKUP_KEY]);
+  const backup = obj[LEDGER_BACKUP_KEY] || [];
   if (!backup.length) return false;
+
   await setLedger(backup);
-  console.warn('[SW] ledger restored from ledger_backup_v1');
   return true;
 }
+
+// Utilities
 
 function originFromUrl(url) {
   try { return new URL(url).origin; } catch { return 'unknown'; }
@@ -80,23 +104,24 @@ function cryptoRandomId() {
 
 function setBadgeSafe(tabId, text, color = '#4f46e5', clearAfterMs = 0) {
   if (tabId == null) return;
-  chrome.tabs.get(tabId).then(
-    () => {
-      chrome.action.setBadgeText({ tabId, text }).catch(() => {});
-      chrome.action.setBadgeBackgroundColor({ tabId, color }).catch(() => {});
-      if (clearAfterMs > 0) {
-        setTimeout(() => {
-          chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
-        }, clearAfterMs);
-      }
-    },
-    () => { /* tab closed */ }
-  ).catch(() => {});
+
+  chrome.tabs.get(tabId).then(() => {
+    chrome.action.setBadgeText({ tabId, text }).catch(() => {});
+    chrome.action.setBadgeBackgroundColor({ tabId, color }).catch(() => {});
+
+    if (clearAfterMs > 0) {
+      setTimeout(() => {
+        chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
+      }, clearAfterMs);
+    }
+  }).catch(() => {});
 }
 
+// Learning
 
 async function learnSignature(record) {
   if (!record?.signatureHash || !record.decidedKind) return null;
+
   const map = await getLearnedMap();
   const prev = map[record.signatureHash];
 
@@ -124,120 +149,134 @@ async function learnSignature(record) {
 
   map[record.signatureHash] = merged;
   await setLearnedMap(map);
-  await logEvent(record.site || 'unknown', 'policy.learned', {
-    signatureHash: record.signatureHash,
-    cmp: merged.cmp,
-    decidedKind: merged.decidedKind,
-    seenCount: merged.seenCount
-  }, merged.decidedBy === 'auto' ? 'auto' : 'user');
+
+  await logEvent(
+    record.site || 'unknown',
+    'policy.learned',
+    {
+      signatureHash: record.signatureHash,
+      decidedKind: merged.decidedKind,
+      seenCount: merged.seenCount
+    },
+    merged.decidedBy === 'auto' ? 'auto' : 'user'
+  );
 
   return merged;
 }
 
+// Policy logic
 
 function chooseDefaultByMode(mode, availableKinds = []) {
-  const has = (k) => availableKinds.includes(k);
-  switch (mode) {
-    case 'strict':
-      return has('reject_like') ? 'reject_like' : (has('settings_like') ? 'settings_like' : (has('accept_like') ? 'accept_like' : null));
-    case 'allow':
-      return has('accept_like') ? 'accept_like' : (has('settings_like') ? 'settings_like' : (has('reject_like') ? 'reject_like' : null));
-    case 'balanced':
-    default:
-      if (has('reject_like')) return 'reject_like';
-      if (has('accept_like')) return 'accept_like';
-      if (has('settings_like')) return 'settings_like';
-      return null;
+  const has = k => availableKinds.includes(k);
+
+  if (mode === 'strict') {
+    return has('reject_like') ? 'reject_like'
+         : has('settings_like') ? 'settings_like'
+         : has('accept_like') ? 'accept_like'
+         : null;
   }
+
+  if (mode === 'allow') {
+    return has('accept_like') ? 'accept_like'
+         : has('settings_like') ? 'settings_like'
+         : has('reject_like') ? 'reject_like'
+         : null;
+  }
+
+  if (has('reject_like')) return 'reject_like';
+  if (has('accept_like')) return 'accept_like';
+  if (has('settings_like')) return 'settings_like';
+  return null;
 }
 
 function safeMatchSignature(learned, incoming) {
-  if (!learned || !incoming) return { ok: false, reason: 'no learned record' };
-  if (learned.signatureHash !== incoming.signatureHash) return { ok: false, reason: 'hash mismatch' };
-  if (learned.cmp && incoming.cmp && learned.cmp !== incoming.cmp) return { ok: false, reason: 'cmp mismatch' };
-  if (!incoming.availableKinds?.includes(learned.decidedKind)) return { ok: false, reason: 'kind not available' };
-  return { ok: true, reason: 'exact signature match' };
+  if (!learned || !incoming) return { ok: false };
+  if (learned.signatureHash !== incoming.signatureHash) return { ok: false };
+  if (learned.cmp && incoming.cmp && learned.cmp !== incoming.cmp) return { ok: false };
+  if (!incoming.availableKinds?.includes(learned.decidedKind)) return { ok: false };
+  return { ok: true };
 }
 
-/** decide whether to auto-apply */
 async function decidePolicy({ site, cmp, signatureHash, availableKinds }) {
   const settings = await getSettings();
-  if (!settings.enabled)   return { apply: false, decidedKind: null, reason: 'disabled' };
-  if (!settings.autoApply) return { apply: false, decidedKind: null, reason: 'autoApply off' };
 
-  const learnedMap = await getLearnedMap();
-  const learned = learnedMap[signatureHash];
+  if (!settings.enabled || !settings.autoApply) {
+    return { apply: false, decidedKind: null, reason: 'disabled' };
+  }
+
   const siteCfg = settings.perSite?.[site] || {};
-  const mode = siteCfg.mode || settings.policyMode;
-
-    // Per-site kill switch
   if (siteCfg.disabled === true) {
     return { apply: false, decidedKind: null, reason: 'site disabled' };
   }
 
+  const learnedMap = await getLearnedMap();
+  const learned = learnedMap[signatureHash];
+  const mode = siteCfg.mode || settings.policyMode;
 
-  // If learned exists and matches safely → apply learned
   if (learned) {
     const safe = safeMatchSignature(learned, { signatureHash, cmp, availableKinds });
-    if (safe.ok) return { apply: true, decidedKind: learned.decidedKind, reason: 'learned:' + safe.reason };
-    // signature drift → skip
-    return { apply: false, decidedKind: null, reason: 'drift:' + safe.reason };
+    if (safe.ok) {
+      return { apply: true, decidedKind: learned.decidedKind, reason: 'learned' };
+    }
+    return { apply: false, decidedKind: null, reason: 'drift' };
   }
 
-  // Otherwise, only apply default if site opted-in to learning
   if (siteCfg.learning !== true) {
-    return { apply: false, decidedKind: null, reason: 'learning not enabled for site' };
+    return { apply: false, decidedKind: null, reason: 'learning disabled' };
   }
 
   const fallback = chooseDefaultByMode(mode, availableKinds || []);
-  if (fallback) return { apply: true, decidedKind: fallback, reason: `default:${mode}` };
-  return { apply: false, decidedKind: null, reason: 'no available action' };
+  if (fallback) {
+    return { apply: true, decidedKind: fallback, reason: 'default' };
+  }
+
+  return { apply: false, decidedKind: null, reason: 'no action' };
 }
 
-// ---------- message bus ----------
+// Message bus
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== 'object') return;
 
   if (msg.type === 'ping') {
-    sendResponse({ pong: true, when: Date.now() });
+    sendResponse({ pong: true });
     return true;
   }
 
   if (msg.type === 'log_event') {
     const site = msg.site || (sender?.tab?.url ? originFromUrl(sender.tab.url) : 'unknown');
-    logEvent(site, msg.action, msg.details, msg.actor).then((entry) => {
+
+    logEvent(site, msg.action, msg.details, msg.actor).then(entry => {
       if (sender?.tab?.id != null) setBadgeSafe(sender.tab.id, '•', '#4f46e5', 3000);
       sendResponse({ ok: true, entry });
     });
+
     return true;
   }
 
   if (msg.type === 'get_ledger') {
-  (async () => {
-    sendResponse({ ok: true, list: await getLedger() });
-  })();
-  return true;
-}
+    (async () => {
+      await tryRestoreLedgerIfEmpty();
+      sendResponse({ ok: true, list: await getLedger() });
+    })();
+    return true;
+  }
 
   if (msg.type === 'clear_ledger') {
-  (async () => {
-    // Hard-delete: remove ledger + backup so nothing can be restored
-    await chrome.storage.local.set({
-      [LEDGER_KEY]: [],
-      last_clear_ledger: { ts: Date.now(), reason: msg.reason || 'manual' }
-    });
-
-    // Remove any backups explicitly
-await chrome.storage.local.remove(['ledger_backup_v1', LEARNED_KEY]);
-    sendResponse({ ok: true });
-  })();
-  return true;
-}
+    (async () => {
+      await chrome.storage.local.set({
+        [LEDGER_KEY]: [],
+        last_clear_ledger: { ts: Date.now(), reason: msg.reason || 'manual' }
+      });
+      await chrome.storage.local.remove([LEDGER_BACKUP_KEY, LEARNED_KEY]);
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
 
   if (msg.type === 'get_settings') {
     (async () => {
-      const settings = await getSettings();
-      sendResponse({ ok: true, settings });
+      sendResponse({ ok: true, settings: await getSettings() });
     })();
     return true;
   }
@@ -250,11 +289,9 @@ await chrome.storage.local.remove(['ledger_backup_v1', LEARNED_KEY]);
         ...(msg.patch || {}),
         perSite: { ...(prev.perSite || {}), ...(msg.patch?.perSite || {}) }
       };
+
       await setSettings(next);
-
-      if (next.enabled) chrome.action.setBadgeText({ text: '' });
-      else chrome.action.setBadgeText({ text: '⏸' });
-
+      chrome.action.setBadgeText({ text: next.enabled ? '' : '⏸' }).catch(() => {});
       sendResponse({ ok: true, settings: next });
     })();
     return true;
@@ -270,8 +307,7 @@ await chrome.storage.local.remove(['ledger_backup_v1', LEARNED_KEY]);
 
   if (msg.type === 'get_learned') {
     (async () => {
-      const map = await getLearnedMap();
-      sendResponse({ ok: true, learned: map });
+      sendResponse({ ok: true, learned: await getLearnedMap() });
     })();
     return true;
   }
@@ -280,11 +316,14 @@ await chrome.storage.local.remove(['ledger_backup_v1', LEARNED_KEY]);
     (async () => {
       const payload = msg.payload || {};
       const decision = await decidePolicy(payload);
-      await logEvent(payload.site, decision.apply ? 'policy.auto.apply' : 'policy.skip', {
-        ...payload,
-        decidedKind: decision.decidedKind,
-        reason: decision.reason
-      }, 'auto');
+
+      await logEvent(
+        payload.site,
+        decision.apply ? 'policy.auto.apply' : 'policy.skip',
+        { ...payload, decidedKind: decision.decidedKind, reason: decision.reason },
+        'auto'
+      );
+
       sendResponse({ ok: true, decision });
     })();
     return true;
