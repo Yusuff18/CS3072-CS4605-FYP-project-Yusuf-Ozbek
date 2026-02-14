@@ -23,7 +23,7 @@ html,body{
   font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;
 }
 
-/* Layout */
+/*Layout*/
 
 .wrap{
   width:420px;
@@ -35,7 +35,7 @@ html,body{
   backdrop-filter:saturate(120%) blur(2px);
 }
 
-/* Header */
+/*Header*/
 
 .header{
   display:flex;
@@ -60,7 +60,7 @@ html,body{
 }
 .logo:hover{ transform:scale(1.05); }
 
-/* Buttons */
+/*Buttons*/
 
 .pill-btn{
   border:1px solid var(--border);
@@ -79,7 +79,7 @@ html,body{
 }
 .pill-btn:active{ transform:scale(.98); }
 
-/* Switch */
+/*Switch*/
 
 .switch{ position:relative; display:inline-block; width:50px; height:28px; }
 .switch input{ opacity:0; width:0; height:0; }
@@ -105,7 +105,7 @@ html,body{
 input:checked + .slider{ background:var(--accent); }
 input:checked + .slider:before{ transform:translateX(22px); }
 
-/* Blocks */
+/*blocks*/
 
 .block{
   margin-bottom:12px;
@@ -131,7 +131,6 @@ input:checked + .slider:before{ transform:translateX(22px); }
   border-radius:999px;
 }
 
-/* Inline toggles */
 
 .toggle-chk{
   appearance:none;
@@ -184,7 +183,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
   box-shadow:0 0 0 3px rgba(191,219,254,.75);
 }
 
-/* Stats tiles */
+/*Stats info*/
 
 .tiles{
   display:grid;
@@ -386,8 +385,6 @@ input:checked + .slider:before{ transform:translateX(22px); }
   outline:none;
   box-shadow:0 0 0 3px rgba(191,219,254,.9), 0 8px 20px rgba(22,163,74,.25);
 }
-
-/* Insights drawer */
 
 .insights-dim{
   position:absolute;

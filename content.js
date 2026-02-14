@@ -1,4 +1,4 @@
-// Boot: respect global enabled toggle
+// Boot cmd
 chrome.storage.local.get('settings_v1', (obj) => {
   const enabled = obj?.settings_v1?.enabled ?? true;
   if (!enabled) {
@@ -12,13 +12,11 @@ function initConsentX() {
   (function init() {
     const inIframe = window.top !== window;
     console.log('[ConsentX] content loaded', { href: location.href, inIframe });
-
-    // Basic page signal
     sendLog('page.load', { title: document.title, path: location.pathname, href: location.href });
 
     installPermissionMonitors();
 
-    // User interactions: log + learn from explicit clicks
+    // User interactions - log & learn from clicks
     const handler = (e) => {
       const el = findClickable(e.target);
       if (!el) return;
@@ -68,7 +66,7 @@ function initConsentX() {
       handler(e);
     }, { capture: true });
 
-    // Banner detection: catch async CMP injections
+    // Banner detection
     const mo = new MutationObserver((muts) => {
       for (const m of muts) {
         for (const node of m.addedNodes) {
@@ -127,7 +125,7 @@ function scanEntireDocument() {
   for (const el of candidates) scanNodeForBanner(el);
 }
 
-// Safety: require exactly one visible in-viewport target
+// safety rules
 function chooseTargetButton(root, kind) {
   const btns = Array.from(
     root.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]')
@@ -158,7 +156,7 @@ function isInViewport(el) {
   );
 }
 
-// Signature hashing
+// signature hashing - imp
 
 function norm(str) {
   return (str || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -209,8 +207,6 @@ function findBannerRoot(el) {
   }
   return null;
 }
-
-// Utilities
 
 function sendLog(action, details, actor) {
   try {
@@ -291,7 +287,7 @@ function shortCssPath(el) {
   }
 }
 
-// Heuristics: keep this conservative (false negatives > false positives)
+// heuristics(false negatives > false positives)
 function looksLikeBanner(node) {
   const el = node instanceof HTMLElement ? node : null;
   if (!el) return false;
@@ -476,7 +472,7 @@ function scanNodeForBanner(node) {
   }).catch(() => {});
 }
 
-// Settings bridge (content -> SW)
+// Settings bridge (content to SW)
 
 function getSettings() {
   return new Promise((res) => {
@@ -655,7 +651,7 @@ function showConsentXToast({ title, sub, meta, onUndo, onDisableSite, primaryTex
   }, 8000);
 }
 
-// Marketing opt-in assist
+// Marketing opt-in assister
 
 let _marketingToastShown = false;
 
@@ -759,7 +755,7 @@ function uncheckMarketingOptIns(list) {
   return changed;
 }
 
-// Permission request detection
+// Permission request detect
 
 let _permToastShown = false;
 
@@ -775,7 +771,7 @@ function installPermissionMonitors() {
     }
   } catch {}
 
-  // Geolocation
+  // geolocation identify
   try {
     const geo = navigator.geolocation;
     if (geo) {
@@ -798,7 +794,7 @@ function installPermissionMonitors() {
     }
   } catch {}
 
-  // Camera / Microphone
+  // Camera / microphone request
   try {
     const md = navigator.mediaDevices;
     if (md && typeof md.getUserMedia === 'function') {
