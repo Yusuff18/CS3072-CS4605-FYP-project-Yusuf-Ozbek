@@ -3,6 +3,7 @@ const LEDGER_KEY   = 'ledger_v1';
 const SETTINGS_KEY = 'settings_v1';
 const LEARNED_KEY  = 'learned_signatures_v1';
 const LEDGER_BACKUP_KEY = 'ledger_backup_v1';
+const SITE_HASHES_KEY = 'site_hashes_v1';
 
 // Default extension behaviour
 const defaultSettings = {
@@ -57,6 +58,36 @@ async function getLearnedMap() {
 
 async function setLearnedMap(map) {
   await chrome.storage.local.set({ [LEARNED_KEY]: map });
+}
+
+// Per-site hash registry (used for drift detection)
+
+async function getSiteHashes() {
+  const obj = await chrome.storage.local.get(SITE_HASHES_KEY);
+  return obj[SITE_HASHES_KEY] || {};
+}
+
+async function setSiteHashes(map) {
+  await chrome.storage.local.set({ [SITE_HASHES_KEY]: map });
+}
+
+async function registerSiteHash(site, signatureHash) {
+  const map = await getSiteHashes();
+  if (!map[site]) map[site] = [];
+  if (!map[site].includes(signatureHash)) {
+    map[site].push(signatureHash);
+    await setSiteHashes(map);
+  }
+}
+
+async function hashIsKnownForSite(site, signatureHash) {
+  const map = await getSiteHashes();
+  return Array.isArray(map[site]) && map[site].includes(signatureHash);
+}
+
+async function siteHasKnownHashes(site) {
+  const map = await getSiteHashes();
+  return Array.isArray(map[site]) && map[site].length > 0;
 }
 
 // Ledger
@@ -150,6 +181,11 @@ async function learnSignature(record) {
   map[record.signatureHash] = merged;
   await setLearnedMap(map);
 
+  // Register this hash as known for this site (enables drift detection)
+  if (record.site) {
+    await registerSiteHash(record.site, record.signatureHash);
+  }
+
   await logEvent(
     record.site || 'unknown',
     'policy.learned',
@@ -221,6 +257,15 @@ async function decidePolicy({ site, cmp, signatureHash, availableKinds }) {
     return { apply: false, decidedKind: null, reason: 'drift' };
   }
 
+  // No exact match — check if this site has any known hashes at all
+  // If it does, this is an unknown hash on a known site = drift
+  const knownSite = await siteHasKnownHashes(site);
+  const knownHash = await hashIsKnownForSite(site, signatureHash);
+
+  if (knownSite && !knownHash) {
+    return { apply: false, decidedKind: null, reason: 'drift' };
+  }
+
   if (siteCfg.learning !== true) {
     return { apply: false, decidedKind: null, reason: 'learning disabled' };
   }
@@ -268,7 +313,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         [LEDGER_KEY]: [],
         last_clear_ledger: { ts: Date.now(), reason: msg.reason || 'manual' }
       });
-      await chrome.storage.local.remove([LEDGER_BACKUP_KEY, LEARNED_KEY]);
+      await chrome.storage.local.remove([LEDGER_BACKUP_KEY, LEARNED_KEY, SITE_HASHES_KEY]);
       sendResponse({ ok: true });
     })();
     return true;

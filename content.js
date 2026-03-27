@@ -1,4 +1,3 @@
-// Boot cmd
 chrome.storage.local.get('settings_v1', (obj) => {
   const enabled = obj?.settings_v1?.enabled ?? true;
   if (!enabled) {
@@ -11,12 +10,13 @@ chrome.storage.local.get('settings_v1', (obj) => {
 function initConsentX() {
   (function init() {
     const inIframe = window.top !== window;
+    window._consentXPageLoadTime = performance.now();
     console.log('[ConsentX] content loaded', { href: location.href, inIframe });
     sendLog('page.load', { title: document.title, path: location.pathname, href: location.href });
 
     installPermissionMonitors();
 
-    // User interactions - log & learn from clicks
+    // User interactions - log, learn from clicks
     const handler = (e) => {
       const el = findClickable(e.target);
       if (!el) return;
@@ -31,6 +31,8 @@ function initConsentX() {
 
       computeBannerSignature(bannerRoot, cmp, available).then((sig) => {
         const selector = shortCssPath(el);
+        const interactionTimeMs = parseFloat((performance.now() - (window._consentXPageLoadTime || 0)).toFixed(2));
+        console.log('[ConsentX] button interaction at', interactionTimeMs, 'ms since page load');
 
         sendLog('cmp.button.click', {
           label,
@@ -41,7 +43,8 @@ function initConsentX() {
           className: el.className || null,
           cmp,
           signatureHash: sig,
-          availableKinds: available
+          availableKinds: available,
+          interactionTimeMs
         }, 'user');
 
         chrome.runtime.sendMessage({
@@ -357,13 +360,16 @@ function scanNodeForBanner(node) {
     _seenSignatures.add(sig);
     _seenNodes.add(node);
 
+    const detectionTimeMs = parseFloat((performance.now() - (window._consentXPageLoadTime || 0)).toFixed(2));
+    console.log('[ConsentX] banner detected in', detectionTimeMs, 'ms');
     sendLog('cmp.banner.detected', {
       tag: node.tagName.toLowerCase(),
       classes: node.className || '',
       href: location.href,
       cmp,
       signatureHash: sig,
-      availableKinds: available
+      availableKinds: available,
+      detectionTimeMs
     });
 
     // Auto-apply (delegated to service worker policy)
@@ -379,7 +385,25 @@ function scanNodeForBanner(node) {
       }
     }, (resp) => {
       const decision = resp?.decision;
-      if (!decision?.apply || !decision.decidedKind) return;
+      console.log('[ConsentX] policy decision received', decision);
+      if (!decision?.apply || !decision.decidedKind) {
+        if (decision?.reason === 'drift') {
+          console.warn('[ConsentX] drift detected — automation paused', { signatureHash: sig, site: location.origin });
+          if (typeof showConsentXToast === 'function') {
+            showConsentXToast({
+              title: 'ConsentX: Automation paused',
+              sub: 'Consent banner has changed since your last visit.',
+              meta: `Site: ${location.hostname} • Please review and re-consent manually.`,
+            });
+            sendLog('policy.drift.notified', {
+              signatureHash: sig,
+              site: location.origin,
+              href: location.href
+            }, 'auto');
+          }
+        }
+        return;
+      }
 
       const target = chooseTargetButton(bannerRoot, decision.decidedKind);
       if (!target) {
@@ -393,6 +417,8 @@ function scanNodeForBanner(node) {
       }
 
       try {
+        const automationTimeMs = parseFloat((performance.now() - (window._consentXPageLoadTime || 0)).toFixed(2));
+        console.log('[ConsentX] automation applied in', automationTimeMs, 'ms since page load');
         target.click();
 
         const label = getLabel(target);
@@ -405,7 +431,8 @@ function scanNodeForBanner(node) {
           href: location.href,
           cmp,
           signatureHash: sig,
-          autoReason: decision.reason
+          autoReason: decision.reason,
+          automationTimeMs
         }, 'auto');
 
         chrome.runtime.sendMessage({
