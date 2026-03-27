@@ -1,5 +1,5 @@
-chrome.storage.local.get('settings_v1', (obj) => {
-  const enabled = obj?.settings_v1?.enabled ?? true;
+chrome.storage.local.get('settings_key', (obj) => {
+  const enabled = obj?.settings_key?.enabled ?? true;
   if (!enabled) {
     console.log('[ConsentX] disabled — content script idle');
     return;
@@ -16,7 +16,7 @@ function initConsentX() {
 
     installPermissionMonitors();
 
-    // User interactions - log, learn from clicks
+    // click handler
     const handler = (e) => {
       const el = findClickable(e.target);
       if (!el) return;
@@ -69,7 +69,7 @@ function initConsentX() {
       handler(e);
     }, { capture: true });
 
-    // Banner detection
+    // mutation observer
     const mo = new MutationObserver((muts) => {
       for (const m of muts) {
         for (const node of m.addedNodes) {
@@ -81,13 +81,13 @@ function initConsentX() {
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 
-    // Initial sweeps
+    // timed sweeps
     scheduleScans([0, 300, 1000, 2500, 4500, 7000]);
     scheduleMarketingScans([1200, 3000, 6000]);
   })();
 }
 
-// Banner scanning
+// --- banner scanning ---
 
 const _seenSignatures = new Set();
 const _seenNodes = new WeakSet();
@@ -128,7 +128,8 @@ function scanEntireDocument() {
   for (const el of candidates) scanNodeForBanner(el);
 }
 
-// safety rules
+// --- button selection ---
+
 function chooseTargetButton(root, kind) {
   const btns = Array.from(
     root.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]')
@@ -159,7 +160,7 @@ function isInViewport(el) {
   );
 }
 
-// signature hashing - imp
+// --- signature hashing ---
 
 function norm(str) {
   return (str || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -216,6 +217,8 @@ function sendLog(action, details, actor) {
     chrome.runtime.sendMessage({ type: 'log_event', site: location.origin, action, details, actor });
   } catch {}
 }
+
+// --- classification ---
 
 function classify(label, el) {
   const L = (label || '').toLowerCase();
@@ -290,7 +293,8 @@ function shortCssPath(el) {
   }
 }
 
-// heuristics(false negatives > false positives)
+// --- banner detection heuristics ---
+
 function looksLikeBanner(node) {
   const el = node instanceof HTMLElement ? node : null;
   if (!el) return false;
@@ -311,6 +315,8 @@ function looksLikeBanner(node) {
 
   return false;
 }
+
+// --- CMP detection ---
 
 function detectCMP(el) {
   const hay = [
@@ -372,7 +378,6 @@ function scanNodeForBanner(node) {
       detectionTimeMs
     });
 
-    // Auto-apply (delegated to service worker policy)
     const bannerRoot = node;
 
     chrome.runtime.sendMessage({
@@ -448,7 +453,6 @@ function scanNodeForBanner(node) {
           }
         });
 
-        // Optional: toast + undo hooks (only if helper functions exist)
         if (typeof showConsentXToast === 'function' && typeof niceKind === 'function') {
           const decisionText = `${niceKind(decision.decidedKind)} applied`;
           const reasonText = decision.reason || 'policy decision';
@@ -499,7 +503,7 @@ function scanNodeForBanner(node) {
   }).catch(() => {});
 }
 
-// Settings bridge (content to SW)
+// --- settings bridge ---
 
 function getSettings() {
   return new Promise((res) => {
@@ -513,7 +517,7 @@ function setSettings(patch) {
   });
 }
 
-// Toast + undo + per-site disable
+// --- toast ---
 
 function niceKind(kind) {
   if (kind === 'accept_like') return 'Accept';
@@ -678,7 +682,7 @@ function showConsentXToast({ title, sub, meta, onUndo, onDisableSite, primaryTex
   }, 8000);
 }
 
-// Marketing opt-in assister
+// --- marketing opt-ins ---
 
 let _marketingToastShown = false;
 
@@ -782,12 +786,12 @@ function uncheckMarketingOptIns(list) {
   return changed;
 }
 
-// Permission request detect
+// --- permission monitors ---
 
 let _permToastShown = false;
 
 function installPermissionMonitors() {
-  // Notifications
+  // notifications
   try {
     if (window.Notification && typeof Notification.requestPermission === 'function') {
       const orig = Notification.requestPermission.bind(Notification);
@@ -798,7 +802,7 @@ function installPermissionMonitors() {
     }
   } catch {}
 
-  // geolocation identify
+  // geolocation
   try {
     const geo = navigator.geolocation;
     if (geo) {
@@ -821,7 +825,7 @@ function installPermissionMonitors() {
     }
   } catch {}
 
-  // Camera / microphone request
+  // camera/mic
   try {
     const md = navigator.mediaDevices;
     if (md && typeof md.getUserMedia === 'function') {

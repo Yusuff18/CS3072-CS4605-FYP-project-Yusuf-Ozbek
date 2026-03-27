@@ -1,14 +1,12 @@
-// Core storage keys
-const LEDGER_KEY   = 'ledger_v1';
-const SETTINGS_KEY = 'settings_v1';
-const LEARNED_KEY  = 'learned_signatures_v1';
+const LEDGER_KEY = 'ledger_key';
+const SETTINGS_KEY = 'settings_key';
+const LEARNED_KEY = 'learned_signature';
 const LEDGER_BACKUP_KEY = 'ledger_backup_v1';
 const SITE_HASHES_KEY = 'site_hashes_v1';
 
-// Default extension behaviour
 const defaultSettings = {
   enabled: true,
-  policyMode: 'balanced',   // strict | balanced | allow
+  policyMode: 'balanced',
   autoApply: true,
   perSite: {}
 };
@@ -18,7 +16,7 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('[SW] installed');
 });
 
-// Storage
+// --- storage helpers ---
 
 async function getLedger() {
   const obj = await chrome.storage.local.get(LEDGER_KEY);
@@ -60,7 +58,7 @@ async function setLearnedMap(map) {
   await chrome.storage.local.set({ [LEARNED_KEY]: map });
 }
 
-// Per-site hash registry (used for drift detection)
+// --- site hash registry ---
 
 async function getSiteHashes() {
   const obj = await chrome.storage.local.get(SITE_HASHES_KEY);
@@ -90,7 +88,7 @@ async function siteHasKnownHashes(site) {
   return Array.isArray(map[site]) && map[site].length > 0;
 }
 
-// Ledger
+// --- ledger ---
 
 async function logEvent(site, action, details = {}, actor = 'user') {
   const entry = {
@@ -121,7 +119,7 @@ async function tryRestoreLedgerIfEmpty() {
   return true;
 }
 
-// Utilities
+// --- utils ---
 
 function originFromUrl(url) {
   try { return new URL(url).origin; } catch { return 'unknown'; }
@@ -148,7 +146,7 @@ function setBadgeSafe(tabId, text, color = '#4f46e5', clearAfterMs = 0) {
   }).catch(() => {});
 }
 
-// Learning
+// --- signature learning ---
 
 async function learnSignature(record) {
   if (!record?.signatureHash || !record.decidedKind) return null;
@@ -181,7 +179,6 @@ async function learnSignature(record) {
   map[record.signatureHash] = merged;
   await setLearnedMap(map);
 
-  // Register this hash as known for this site (enables drift detection)
   if (record.site) {
     await registerSiteHash(record.site, record.signatureHash);
   }
@@ -200,7 +197,7 @@ async function learnSignature(record) {
   return merged;
 }
 
-// Policy logic
+// --- policy ---
 
 function chooseDefaultByMode(mode, availableKinds = []) {
   const has = k => availableKinds.includes(k);
@@ -257,8 +254,7 @@ async function decidePolicy({ site, cmp, signatureHash, availableKinds }) {
     return { apply: false, decidedKind: null, reason: 'drift' };
   }
 
-  // No exact match — check if this site has any known hashes at all
-  // If it does, this is an unknown hash on a known site = drift
+  // unknown hash — check if site has any prior hashes
   const knownSite = await siteHasKnownHashes(site);
   const knownHash = await hashIsKnownForSite(site, signatureHash);
 
@@ -278,7 +274,7 @@ async function decidePolicy({ site, cmp, signatureHash, availableKinds }) {
   return { apply: false, decidedKind: null, reason: 'no action' };
 }
 
-// Message bus
+// --- message bus ---
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== 'object') return;
@@ -290,12 +286,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'log_event') {
     const site = msg.site || (sender?.tab?.url ? originFromUrl(sender.tab.url) : 'unknown');
-
     logEvent(site, msg.action, msg.details, msg.actor).then(entry => {
       if (sender?.tab?.id != null) setBadgeSafe(sender.tab.id, '•', '#4f46e5', 3000);
       sendResponse({ ok: true, entry });
     });
-
     return true;
   }
 
@@ -334,7 +328,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         ...(msg.patch || {}),
         perSite: { ...(prev.perSite || {}), ...(msg.patch?.perSite || {}) }
       };
-
       await setSettings(next);
       chrome.action.setBadgeText({ text: next.enabled ? '' : '⏸' }).catch(() => {});
       sendResponse({ ok: true, settings: next });
