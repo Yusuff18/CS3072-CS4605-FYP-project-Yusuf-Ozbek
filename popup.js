@@ -1,3 +1,4 @@
+//DOM element references
 document.addEventListener('DOMContentLoaded', () => {
   const els = {
     enabled:      document.getElementById('enabled'),
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     insightsBody:   document.getElementById('insightsBody'),
   };
 
-  // Events
+  // bind UI events listener
   els.enabled?.addEventListener('change', onToggleEnabled);
   els.autoApply?.addEventListener('change', onGlobalChanged);
   els.policyMode?.addEventListener('change', onGlobalChanged);
@@ -49,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   init().catch(console.error);
 
-  // Init
+  // initialising popup UI, loading settings, ledger and tab on popup open
   async function init() {
     const [settings, ledger, origin] = await Promise.all([
       getSettings(),
@@ -98,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else els.modeHint.textContent = 'Prefers accept cookies';
   }
 
-  // Render
+  // rendering popup state
   function draw(ledger) {
     const encountered = ledger.filter(e => e.action === 'cmp.banner.detected').length;
 
@@ -109,9 +110,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const siteCounts = groupBySite(ledger.filter(e => e.action === 'cmp.banner.detected'));
 
-    els.encountered.textContent = String(encountered);
-    els.autofilled.textContent = String(autoFilled);
-    els.sites.textContent = String(Object.keys(siteCounts).length);
+    if (els.encountered) els.encountered.textContent = String(encountered);
+    if (els.autofilled) els.autofilled.textContent = String(autoFilled);
+    if (els.sites) els.sites.textContent = String(Object.keys(siteCounts).length);
 
     const accepted = ledger.filter(e => e.action === 'cmp.button.click' && e.details?.kind === 'accept_like').length;
     const rejected = ledger.filter(e => e.action === 'cmp.button.click' && e.details?.kind === 'reject_like').length;
@@ -211,7 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSites();
   }
 
-  // Insights
+  // insights panel
   function toggleInsights(open) {
     if (!els.insightsDrawer || !els.insightsDim) return;
 
@@ -309,11 +310,11 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
   }
 
-  // Overlay
+  // UI disabled overlay
   function showOverlay() { els.overlay?.classList.remove('hidden'); }
   function hideOverlay() { els.overlay?.classList.add('hidden'); }
 
-  // Settings
+  // settings
   async function onToggleEnabled() {
     const enabled = !!(els.enabled && els.enabled.checked);
     await setSettings({ enabled });
@@ -344,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await setSettings(patch);
   }
 
-  // Messaging
+  //  chrome messaging helper
   function getLedger() {
     return new Promise(res =>
       chrome.runtime.sendMessage({ type: 'get_ledger' }, r => res(r?.list || []))
@@ -371,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Helpers
+  // formatting and display helpers
   function humanizeSite(origin) {
     try {
       const host = new URL(origin).hostname.replace(/^www\./, '');
@@ -464,7 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({ type: 'clear_ledger', reason: 'popup-reset' }, async () => {
       const ledger = await getLedger();
       draw(ledger);
-      alert('Stats reset. A backup copy was saved (ledger_backup_v1).');
+      alert('Stats reset. A backup copy was saved locally.');
     });
   }
 

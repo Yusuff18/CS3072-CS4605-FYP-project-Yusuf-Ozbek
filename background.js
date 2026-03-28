@@ -16,7 +16,7 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('[SW] installed');
 });
 
-// --- storage helpers ---
+// storage helpers
 
 async function getLedger() {
   const obj = await chrome.storage.local.get(LEDGER_KEY);
@@ -58,7 +58,7 @@ async function setLearnedMap(map) {
   await chrome.storage.local.set({ [LEARNED_KEY]: map });
 }
 
-// --- site hash registry ---
+// site hash registering 
 
 async function getSiteHashes() {
   const obj = await chrome.storage.local.get(SITE_HASHES_KEY);
@@ -88,7 +88,7 @@ async function siteHasKnownHashes(site) {
   return Array.isArray(map[site]) && map[site].length > 0;
 }
 
-// --- ledger ---
+// ledger for contextual info
 
 async function logEvent(site, action, details = {}, actor = 'user') {
   const entry = {
@@ -119,7 +119,7 @@ async function tryRestoreLedgerIfEmpty() {
   return true;
 }
 
-// --- utils ---
+// utilities 
 
 function originFromUrl(url) {
   try { return new URL(url).origin; } catch { return 'unknown'; }
@@ -146,7 +146,7 @@ function setBadgeSafe(tabId, text, color = '#4f46e5', clearAfterMs = 0) {
   }).catch(() => {});
 }
 
-// --- signature learning ---
+// signature learning
 
 async function learnSignature(record) {
   if (!record?.signatureHash || !record.decidedKind) return null;
@@ -197,7 +197,7 @@ async function learnSignature(record) {
   return merged;
 }
 
-// --- policy ---
+// policy
 
 function chooseDefaultByMode(mode, availableKinds = []) {
   const has = k => availableKinds.includes(k);
@@ -254,14 +254,6 @@ async function decidePolicy({ site, cmp, signatureHash, availableKinds }) {
     return { apply: false, decidedKind: null, reason: 'drift' };
   }
 
-  // unknown hash — check if site has any prior hashes
-  const knownSite = await siteHasKnownHashes(site);
-  const knownHash = await hashIsKnownForSite(site, signatureHash);
-
-  if (knownSite && !knownHash) {
-    return { apply: false, decidedKind: null, reason: 'drift' };
-  }
-
   if (siteCfg.learning !== true) {
     return { apply: false, decidedKind: null, reason: 'learning disabled' };
   }
@@ -274,7 +266,7 @@ async function decidePolicy({ site, cmp, signatureHash, availableKinds }) {
   return { apply: false, decidedKind: null, reason: 'no action' };
 }
 
-// --- message bus ---
+// message bus to handle incoming messages
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== 'object') return;

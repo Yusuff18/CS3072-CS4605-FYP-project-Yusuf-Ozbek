@@ -1,9 +1,29 @@
+// wake service worker before sending messages
+function wakeServiceWorker() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: 'ping' }, () => {
+      if (chrome.runtime.lastError) {}
+      resolve();
+    });
+  });
+}
+
+// keepalive — pings SW every 25s to prevent it going idle
+function startKeepalive() {
+  setInterval(() => {
+    chrome.runtime.sendMessage({ type: 'ping' }, () => {
+      if (chrome.runtime.lastError) {}
+    });
+  }, 25000);
+}
+
 chrome.storage.local.get('settings_key', (obj) => {
   const enabled = obj?.settings_key?.enabled ?? true;
   if (!enabled) {
     console.log('[ConsentX] disabled — content script idle');
     return;
   }
+  startKeepalive();
   initConsentX();
 });
 
@@ -47,17 +67,22 @@ function initConsentX() {
           interactionTimeMs
         }, 'user');
 
-        chrome.runtime.sendMessage({
-          type: 'learn_signature',
-          record: {
-            signatureHash: sig,
-            site: location.origin,
-            cmp,
-            decidedKind: kind,
-            decidedBy: 'user',
-            labelExample: label || null,
-            selectorExample: selector || null
-          }
+        wakeServiceWorker().then(() => {
+          chrome.runtime.sendMessage({
+            type: 'learn_signature',
+            record: {
+              signatureHash: sig,
+              site: location.origin,
+              cmp,
+              decidedKind: kind,
+              decidedBy: 'user',
+              labelExample: label || null,
+              selectorExample: selector || null
+            }
+          }, (resp) => {
+            if (chrome.runtime.lastError) return;
+            console.log('[ConsentX] signature learned —', kind, { signatureHash: sig, site: location.origin });
+          });
         });
       });
     };
@@ -214,7 +239,9 @@ function findBannerRoot(el) {
 
 function sendLog(action, details, actor) {
   try {
-    chrome.runtime.sendMessage({ type: 'log_event', site: location.origin, action, details, actor });
+    chrome.runtime.sendMessage({ type: 'log_event', site: location.origin, action, details, actor }, () => {
+      if (chrome.runtime.lastError) return;
+    });
   } catch {}
 }
 
@@ -380,6 +407,7 @@ function scanNodeForBanner(node) {
 
     const bannerRoot = node;
 
+    wakeServiceWorker().then(() => {
     chrome.runtime.sendMessage({
       type: 'policy_check',
       payload: {
@@ -389,8 +417,19 @@ function scanNodeForBanner(node) {
         availableKinds: available
       }
     }, (resp) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[ConsentX] policy check failed —', chrome.runtime.lastError.message);
+        return;
+      }
+      if (!resp) {
+        console.warn('[ConsentX] policy check — no response from service worker');
+        return;
+      }
       const decision = resp?.decision;
       console.log('[ConsentX] policy decision received', decision);
+      if (decision?.apply && decision?.reason === 'learned') {
+        console.log('[ConsentX] policy applied —', decision.decidedKind, { signatureHash: sig, site: location.origin, reason: decision.reason });
+      }
       if (!decision?.apply || !decision.decidedKind) {
         if (decision?.reason === 'drift') {
           console.warn('[ConsentX] drift detected — automation paused', { signatureHash: sig, site: location.origin });
@@ -451,7 +490,7 @@ function scanNodeForBanner(node) {
             labelExample: label || null,
             selectorExample: selector || null
           }
-        });
+        }, (resp) => { if (chrome.runtime.lastError) return; });
 
         if (typeof showConsentXToast === 'function' && typeof niceKind === 'function') {
           const decisionText = `${niceKind(decision.decidedKind)} applied`;
@@ -500,6 +539,7 @@ function scanNodeForBanner(node) {
         }, 'auto');
       }
     });
+    }); // end wakeServiceWorker
   }).catch(() => {});
 }
 
