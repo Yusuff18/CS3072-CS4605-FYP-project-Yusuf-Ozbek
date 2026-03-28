@@ -23,7 +23,7 @@ html,body{
   font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;
 }
 
-/*Layout*/
+/* main container */
 
 .wrap{
   width:420px;
@@ -35,7 +35,7 @@ html,body{
   backdrop-filter:saturate(120%) blur(2px);
 }
 
-/*Header*/
+/* top bar with logo and controls */
 
 .header{
   display:flex;
@@ -60,7 +60,7 @@ html,body{
 }
 .logo:hover{ transform:scale(1.05); }
 
-/*Buttons*/
+/* small rounded buttons */
 
 .pill-btn{
   border:1px solid var(--border);
@@ -79,7 +79,7 @@ html,body{
 }
 .pill-btn:active{ transform:scale(.98); }
 
-/*Switch*/
+/* toggle switch */
 
 .switch{ position:relative; display:inline-block; width:50px; height:28px; }
 .switch input{ opacity:0; width:0; height:0; }
@@ -105,7 +105,7 @@ html,body{
 input:checked + .slider{ background:var(--accent); }
 input:checked + .slider:before{ transform:translateX(22px); }
 
-/*blocks*/
+/* section cards */
 
 .block{
   margin-bottom:12px;
@@ -131,6 +131,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
   border-radius:999px;
 }
 
+/* checkbox styled as toggle */
 
 .toggle-chk{
   appearance:none;
@@ -159,7 +160,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
 .toggle-chk:checked:before{ transform:translateX(20px); }
 .toggle-chk:focus-visible{ box-shadow:0 0 0 3px rgba(59,130,246,.25); }
 
-/* Select */
+/* dropdown */
 
 .pretty-select{
   appearance:none;
@@ -183,7 +184,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
   box-shadow:0 0 0 3px rgba(191,219,254,.75);
 }
 
-/*Stats info*/
+/* stat tiles grid */
 
 .tiles{
   display:grid;
@@ -213,7 +214,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
 .tile-num{ font-size:22px; font-weight:800; }
 .tile-label{ color:var(--muted); margin-top:4px; }
 
-/* Search */
+/* site search box */
 
 .search{
   width:48%;
@@ -229,7 +230,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
   border-color:#bfdbfe;
 }
 
-/* Chips */
+/* activity chips */
 
 .chips{
   list-style:none;
@@ -258,7 +259,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
   font-weight:500;
 }
 
-/* Sites list */
+/* scrollable sites list */
 
 .sites-list{
   display:flex;
@@ -289,6 +290,8 @@ input:checked + .slider:before{ transform:translateX(22px); }
 
 .site-left{ display:flex; align-items:center; gap:10px; }
 
+/* first letter avatar */
+
 .avatar{
   width:20px;
   height:20px;
@@ -314,7 +317,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
   font-weight:800;
 }
 
-/* Footer */
+/* bottom bar */
 
 .footer{
   display:flex;
@@ -335,14 +338,15 @@ input:checked + .slider:before{ transform:translateX(22px); }
 }
 .linklike:hover{ background:rgba(37,99,235,.1); }
 
+/* misc */
+
 .muted{ color:var(--muted); }
 .muted.little{ font-size:11px; }
-
 .margin-top4{ margin-top:4px; }
 .margin-top6{ margin-top:6px; }
 .pointer{ cursor:pointer; }
 
-/* Overlay */
+/* shown when extension is disabled */
 
 .overlay{
   position:absolute;
@@ -386,6 +390,8 @@ input:checked + .slider:before{ transform:translateX(22px); }
   box-shadow:0 0 0 3px rgba(191,219,254,.9), 0 8px 20px rgba(22,163,74,.25);
 }
 
+/* dim behind insights drawer */
+
 .insights-dim{
   position:absolute;
   inset:0;
@@ -397,6 +403,8 @@ input:checked + .slider:before{ transform:translateX(22px); }
   z-index:40;
 }
 .insights-dim.show{ opacity:1; pointer-events:auto; }
+
+/* slide-in panel from the right */
 
 .insights-drawer{
   position:absolute;
@@ -444,7 +452,7 @@ input:checked + .slider:before{ transform:translateX(22px); }
   gap:10px;
 }
 
-/* Drawer cards */
+/* insight cards */
 
 .ins-card{
   border:1px solid var(--border);

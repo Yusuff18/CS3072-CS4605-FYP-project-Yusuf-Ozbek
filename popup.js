@@ -387,9 +387,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const diff = Date.now() - ts;
     const s = diff / 1000;
     if (s < 60) return 'just now';
-    const m = s / 60; if (m < 60) return `${m | 0} min ago`;
-    const h = m / 60; if (h < 24) return `${h | 0}h ago`;
-    const d = h / 24; if (d < 7) return `${d | 0}d ago`;
+    const m = s / 60; if (m < 60) return `${m | 0} minutes ago`;
+    const h = m / 60; if (h < 24) return `${h | 0}hours   ago`;
+    const d = h / 24; if (d < 7) return `${d | 0}days ago`;
     return `${(d / 7) | 0}w ago`;
   }
 
